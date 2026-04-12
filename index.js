@@ -289,10 +289,11 @@ app.post("/getFilms", (req, res) => {
         watched: result.reduce((acc, cur) => {
           return cur.status === "watched" ? acc + 1 : acc;
         }, 0),
-        averageRating:
-          result.reduce((acc, cur) => {
-            return acc + cur.rating;
-          }, 0) / result.length,
+        averageRating: result.length
+          ? result.reduce((acc, cur) => {
+              return acc + cur.rating;
+            }, 0) / result.length
+          : 0,
       },
       pagination: {
         currentPage: page,
