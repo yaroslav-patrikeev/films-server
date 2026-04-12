@@ -119,7 +119,7 @@
 ```json
 {
   "success": false,
-  "message": "Поле 'pagination' обязательно"
+  "errorMessage": "Поле 'pagination' обязательно"
 }
 ```
 
@@ -128,7 +128,7 @@
 ```json
 {
   "success": false,
-  "message": "Поле 'pagination.page' обязательно"
+  "errorMessage": "Поле 'pagination.page' обязательно"
 }
 ```
 
@@ -137,7 +137,7 @@
 ```json
 {
   "success": false,
-  "message": "Недопустимый параметр фильтра: 'invalidField'. Допустимые: genres, status, minRating, yearRange"
+  "errorMessage": "Недопустимый параметр фильтра: 'invalidField'. Допустимые: genres, status, minRating, yearRange"
 }
 ```
 
@@ -146,7 +146,7 @@
 ```json
 {
   "success": false,
-  "message": "Недопустимый жанр: 'western'. Допустимые: drama, comedy, action, fantasy, thriller, horror, melodrama, adventure, detective"
+  "errorMessage": "Недопустимый жанр: 'western'. Допустимые: drama, comedy, action, fantasy, thriller, horror, melodrama, adventure, detective"
 }
 ```
 
@@ -155,7 +155,7 @@
 ```json
 {
   "success": false,
-  "message": "Недопустимый статус: 'viewing'. Допустимые: in_plans, watched"
+  "errorMessage": "Недопустимый статус: 'viewing'. Допустимые: in_plans, watched"
 }
 ```
 
@@ -164,7 +164,7 @@
 ```json
 {
   "success": false,
-  "message": "Поле 'filters.minRating' должно быть числом от 0 до 10"
+  "errorMessage": "Поле 'filters.minRating' должно быть числом от 0 до 10"
 }
 ```
 
@@ -173,7 +173,7 @@
 ```json
 {
   "success": false,
-  "message": "Поле 'filters.yearRange' должно содержать хотя бы одно из полей: 'from' или 'to'"
+  "errorMessage": "Поле 'filters.yearRange' должно содержать хотя бы одно из полей: 'from' или 'to'"
 }
 ```
 
@@ -182,7 +182,7 @@
 ```json
 {
   "success": false,
-  "message": "Поле 'filters.yearRange.from' должно быть корректным годом (1888-2026)"
+  "errorMessage": "Поле 'filters.yearRange.from' должно быть корректным годом (1888-2026)"
 }
 ```
 
@@ -191,7 +191,7 @@
 ```json
 {
   "success": false,
-  "message": "Поле 'filters.yearRange.from' не может быть больше 'to'"
+  "errorMessage": "Поле 'filters.yearRange.from' не может быть больше 'to'"
 }
 ```
 
@@ -200,7 +200,7 @@
 ```json
 {
   "success": false,
-  "message": "Недопустимое поле сортировки: 'director'. Допустимые: year, rating, createdAt, title"
+  "errorMessage": "Недопустимое поле сортировки: 'director'. Допустимые: year, rating, createdAt, title"
 }
 ```
 
@@ -209,7 +209,7 @@
 ```json
 {
   "success": false,
-  "message": "Недопустимый порядок сортировки: 'up'. Допустимые: asc, desc"
+  "errorMessage": "Недопустимый порядок сортировки: 'up'. Допустимые: asc, desc"
 }
 ```
 
@@ -218,7 +218,7 @@
 ```json
 {
   "success": false,
-  "message": "Поле 'pagination.pageSize' должно быть числом от 1 до 100"
+  "errorMessage": "Поле 'pagination.pageSize' должно быть числом от 1 до 100"
 }
 ```
 
