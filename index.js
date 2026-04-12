@@ -284,10 +284,19 @@ app.post("/getFilms", (req, res) => {
     res.json({
       success: true,
       data: paginatedResult,
+      statistic: {
+        total: result.length,
+        watched: result.reduce((acc, cur) => {
+          return cur.status === "watched" ? acc + 1 : acc;
+        }, 0),
+        averageRating:
+          result.reduce((acc, cur) => {
+            return acc + cur.rating;
+          }, 0) / result.length,
+      },
       pagination: {
         currentPage: page,
         pageSize: pageSize,
-        totalItems: result.length,
         totalPages: Math.ceil(result.length / pageSize),
       },
     });

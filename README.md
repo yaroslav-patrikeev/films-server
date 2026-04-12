@@ -89,26 +89,30 @@
   "pagination": {
     "currentPage": 1,
     "pageSize": 10,
-    "totalItems": 42,
-    "totalPages": 5,
-    "hasNextPage": true,
-    "hasPrevPage": false
+    "totalPages": 5
+  },
+  "statistic": {
+    "total": 1,
+    "watched": 1,
+    "averageRating": 9.1
   }
 }
 ```
 
 #### Поля ответа
 
-| Поле                     | Описание                    |
-| ------------------------ | --------------------------- |
-| `success`                | Статус выполнения запроса   |
-| `data`                   | Массив фильмов              |
-| `pagination.currentPage` | Текущая страница            |
-| `pagination.pageSize`    | Размер страницы             |
-| `pagination.totalItems`  | Общее количество фильмов    |
-| `pagination.totalPages`  | Общее количество страниц    |
-| `pagination.hasNextPage` | Есть ли следующая страница  |
-| `pagination.hasPrevPage` | Есть ли предыдущая страница |
+| Поле                      | Описание                    |
+| ------------------------- | --------------------------- |
+| `success`                 | Статус выполнения запроса   |
+| `data`                    | Массив фильмов              |
+| `pagination.currentPage`  | Текущая страница            |
+| `pagination.pageSize`     | Размер страницы             |
+| `pagination.totalPages`   | Общее количество страниц    |
+| `pagination.hasNextPage`  | Есть ли следующая страница  |
+| `pagination.hasPrevPage`  | Есть ли предыдущая страница |
+| `statistic.total`         | Всего фильмов               |
+| `statistic.watched`       | Просмотрено                 |
+| `statistic.averageRating` | Средний рейтинг             |
 
 ### ❌ Ошибки (400 Bad Request)
 
