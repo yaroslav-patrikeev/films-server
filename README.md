@@ -101,18 +101,16 @@
 
 #### Поля ответа
 
-| Поле                      | Описание                    |
-| ------------------------- | --------------------------- |
-| `success`                 | Статус выполнения запроса   |
-| `data`                    | Массив фильмов              |
-| `pagination.currentPage`  | Текущая страница            |
-| `pagination.pageSize`     | Размер страницы             |
-| `pagination.totalPages`   | Общее количество страниц    |
-| `pagination.hasNextPage`  | Есть ли следующая страница  |
-| `pagination.hasPrevPage`  | Есть ли предыдущая страница |
-| `statistic.total`         | Всего фильмов               |
-| `statistic.watched`       | Просмотрено                 |
-| `statistic.averageRating` | Средний рейтинг             |
+| Поле                      | Описание                  |
+| ------------------------- | ------------------------- |
+| `success`                 | Статус выполнения запроса |
+| `data`                    | Массив фильмов            |
+| `pagination.currentPage`  | Текущая страница          |
+| `pagination.pageSize`     | Размер страницы           |
+| `pagination.totalPages`   | Общее количество страниц  |
+| `statistic.total`         | Всего фильмов             |
+| `statistic.watched`       | Просмотрено               |
+| `statistic.averageRating` | Средний рейтинг           |
 
 ### ❌ Ошибки (400 Bad Request)
 
