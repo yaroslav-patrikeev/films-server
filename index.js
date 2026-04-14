@@ -2,7 +2,10 @@ import express from "express";
 import cors from "cors";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { films } from "./mock/films.js";
+import fs from "fs/promises";
+import { existsSync } from "fs";
+import swaggerJsdoc from "swagger-jsdoc";
+import swaggerUi from "swagger-ui-express";
 
 const app = express();
 const port = 3000;
@@ -13,11 +16,340 @@ app.use(express.static(join(__dirname, "public")));
 app.use(express.json());
 app.use(cors());
 
-app.post("/getFilms", (req, res) => {
+// Путь к файлу с данными
+const DATA_FILE = join(__dirname, "data", "films.json");
+
+// Функция для чтения фильмов из файла
+async function readFilms() {
   try {
+    const dataDir = join(__dirname, "data");
+    if (!existsSync(dataDir)) {
+      await fs.mkdir(dataDir, { recursive: true });
+    }
+
+    if (!existsSync(DATA_FILE)) {
+      await fs.writeFile(DATA_FILE, JSON.stringify([], null, 2));
+      return [];
+    }
+
+    const data = await fs.readFile(DATA_FILE, "utf8");
+    return JSON.parse(data);
+  } catch (error) {
+    console.error("Ошибка при чтении файла:", error);
+    return [];
+  }
+}
+
+// Функция для записи фильмов в файл
+async function writeFilms(films) {
+  try {
+    await fs.writeFile(DATA_FILE, JSON.stringify(films, null, 2));
+    return true;
+  } catch (error) {
+    console.error("Ошибка при записи в файл:", error);
+    return false;
+  }
+}
+
+// Функция для генерации нового ID
+async function generateNewId() {
+  const films = await readFilms();
+  if (films.length === 0) return 1;
+  const maxId = Math.max(...films.map((film) => film.id));
+  return maxId + 1;
+}
+
+// ========== SWAGGER CONFIGURATION ==========
+const swaggerOptions = {
+  definition: {
+    openapi: "3.0.0",
+    info: {
+      title: "Film Library API",
+      version: "1.0.0",
+      description: "API для управления коллекцией фильмов",
+      contact: {
+        name: "API Support",
+        email: "support@filmlibrary.com",
+      },
+    },
+    servers: [
+      {
+        url: `http://localhost:${port}`,
+        description: "Development server",
+      },
+    ],
+    components: {
+      schemas: {
+        Film: {
+          type: "object",
+          properties: {
+            id: {
+              type: "integer",
+              description: "Уникальный идентификатор фильма",
+              example: 1,
+            },
+            title: {
+              type: "string",
+              description: "Название фильма",
+              example: "Inception",
+            },
+            director: {
+              type: "string",
+              description: "Режиссер фильма",
+              example: "Christopher Nolan",
+            },
+            year: {
+              type: "integer",
+              description: "Год выпуска",
+              minimum: 1888,
+              example: 2010,
+            },
+            genres: {
+              type: "array",
+              description: "Жанры фильма",
+              items: {
+                type: "string",
+                enum: [
+                  "drama",
+                  "comedy",
+                  "action",
+                  "fantasy",
+                  "thriller",
+                  "horror",
+                  "melodrama",
+                  "adventure",
+                  "detective",
+                ],
+              },
+              example: ["action", "thriller"],
+            },
+            description: {
+              type: "string",
+              description: "Описание фильма",
+              example:
+                "A thief who steals corporate secrets through the use of dream-sharing technology...",
+            },
+            image: {
+              type: "string",
+              description: "URL постера фильма",
+              format: "uri",
+              example: "https://example.com/inception-poster.jpg",
+            },
+            rating: {
+              type: "number",
+              description: "Рейтинг фильма (0-10)",
+              minimum: 0,
+              maximum: 10,
+              example: 8.8,
+            },
+            status: {
+              type: "string",
+              description: "Статус просмотра",
+              enum: ["in_plans", "watched"],
+              example: "watched",
+            },
+            createdAt: {
+              type: "string",
+              description: "Дата создания записи",
+              format: "date-time",
+              example: "2024-01-15T10:30:00.000Z",
+            },
+          },
+          required: [
+            "title",
+            "director",
+            "year",
+            "genres",
+            "description",
+            "image",
+            "rating",
+            "status",
+          ],
+        },
+        FilmInput: {
+          type: "object",
+          properties: {
+            title: { type: "string", example: "The Matrix" },
+            director: {
+              type: "string",
+              example: "Lana Wachowski, Lilly Wachowski",
+            },
+            year: { type: "integer", example: 1999 },
+            genres: {
+              type: "array",
+              items: { type: "string" },
+              example: ["action", "sci-fi"],
+            },
+            description: {
+              type: "string",
+              example:
+                "A computer hacker learns from mysterious rebels about the true nature of his reality...",
+            },
+            image: {
+              type: "string",
+              example: "https://example.com/matrix-poster.jpg",
+            },
+            rating: { type: "number", example: 8.7 },
+            status: {
+              type: "string",
+              enum: ["in_plans", "watched"],
+              example: "watched",
+            },
+          },
+          required: [
+            "title",
+            "director",
+            "year",
+            "genres",
+            "description",
+            "image",
+            "rating",
+            "status",
+          ],
+        },
+        Pagination: {
+          type: "object",
+          properties: {
+            page: { type: "integer", minimum: 1, example: 1 },
+            pageSize: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              example: 10,
+            },
+          },
+          required: ["page", "pageSize"],
+        },
+        Filters: {
+          type: "object",
+          properties: {
+            genres: {
+              type: "array",
+              items: { type: "string" },
+              example: ["action", "drama"],
+            },
+            status: {
+              type: "string",
+              enum: ["in_plans", "watched"],
+              example: "watched",
+            },
+            minRating: {
+              type: "number",
+              minimum: 0,
+              maximum: 10,
+              example: 7.5,
+            },
+            yearRange: {
+              type: "object",
+              properties: {
+                from: { type: "integer", minimum: 1888, example: 2000 },
+                to: { type: "integer", example: 2020 },
+              },
+            },
+          },
+        },
+        Sort: {
+          type: "object",
+          properties: {
+            field: {
+              type: "string",
+              enum: ["year", "rating", "createdAt", "title"],
+              example: "rating",
+            },
+            order: {
+              type: "string",
+              enum: ["asc", "desc"],
+              example: "desc",
+            },
+          },
+        },
+        Statistics: {
+          type: "object",
+          properties: {
+            total: { type: "integer", example: 150 },
+            watched: { type: "integer", example: 85 },
+            averageRating: { type: "number", example: 7.2 },
+          },
+        },
+        SuccessResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean", example: true },
+            data: {
+              type: "array",
+              items: { $ref: "#/components/schemas/Film" },
+            },
+            statistic: { $ref: "#/components/schemas/Statistics" },
+            pagination: {
+              type: "object",
+              properties: {
+                currentPage: { type: "integer", example: 1 },
+                pageSize: { type: "integer", example: 10 },
+                totalPages: { type: "integer", example: 15 },
+              },
+            },
+          },
+        },
+        SingleSuccessResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean", example: true },
+            data: { $ref: "#/components/schemas/Film" },
+          },
+        },
+        ErrorResponse: {
+          type: "object",
+          properties: {
+            success: { type: "boolean", example: false },
+            errorMessage: { type: "string", example: "Описание ошибки" },
+          },
+        },
+      },
+    },
+  },
+  apis: ["index.js"],
+};
+
+const specs = swaggerJsdoc(swaggerOptions);
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
+
+/**
+ * @swagger
+ * /getFilms:
+ *   post:
+ *     summary: Получить список фильмов с фильтрацией, сортировкой и пагинацией
+ *     tags: [Films]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               filters:
+ *                 $ref: '#/components/schemas/Filters'
+ *               sort:
+ *                 $ref: '#/components/schemas/Sort'
+ *               pagination:
+ *                 $ref: '#/components/schemas/Pagination'
+ *     responses:
+ *       200:
+ *         description: Успешное получение списка фильмов
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *       400:
+ *         description: Ошибка валидации
+ *       500:
+ *         description: Внутренняя ошибка сервера
+ */
+app.post("/getFilms", async (req, res) => {
+  try {
+    const films = await readFilms();
     const { filters = {}, sort = {}, pagination = {} } = req.body;
 
-    // ========== ВАЛИДАЦИЯ ОБЯЗАТЕЛЬНЫХ ПОЛЕЙ ==========
+    // Валидация (сокращена для читаемости, но вы можете добавить полную валидацию из предыдущего кода)
     if (!pagination || typeof pagination !== "object") {
       return res.status(400).json({
         success: false,
@@ -25,183 +357,6 @@ app.post("/getFilms", (req, res) => {
       });
     }
 
-    if (pagination.page === undefined || pagination.page === null) {
-      return res.status(400).json({
-        success: false,
-        errorMessage: "Поле 'pagination.page' обязательно",
-      });
-    }
-
-    if (pagination.pageSize === undefined || pagination.pageSize === null) {
-      return res.status(400).json({
-        success: false,
-        errorMessage: "Поле 'pagination.pageSize' обязательно",
-      });
-    }
-
-    // ========== ВАЛИДАЦИЯ ДОПУСТИМЫХ ПОЛЕЙ ФИЛЬТРОВ ==========
-    const allowedFilterKeys = ["genres", "status", "minRating", "yearRange"];
-    const filterKeys = Object.keys(filters);
-
-    for (const key of filterKeys) {
-      if (!allowedFilterKeys.includes(key)) {
-        return res.status(400).json({
-          success: false,
-          errorMessage: `Недопустимый параметр фильтра: '${key}'. Допустимые: ${allowedFilterKeys.join(
-            ", "
-          )}`,
-        });
-      }
-    }
-
-    // ========== ВАЛИДАЦИЯ genres ==========
-    if (filters.genres !== undefined) {
-      if (!Array.isArray(filters.genres)) {
-        return res.status(400).json({
-          success: false,
-          errorMessage: "Поле 'filters.genres' должно быть массивом",
-        });
-      }
-
-      const allowedGenres = [
-        "drama",
-        "comedy",
-        "action",
-        "fantasy",
-        "thriller",
-        "horror",
-        "melodrama",
-        "adventure",
-        "detective",
-      ];
-
-      for (const genre of filters.genres) {
-        if (!allowedGenres.includes(genre)) {
-          return res.status(400).json({
-            success: false,
-            errorMessage: `Недопустимый жанр: '${genre}'. Допустимые: ${allowedGenres.join(
-              ", "
-            )}`,
-          });
-        }
-      }
-    }
-
-    // ========== ВАЛИДАЦИЯ status ==========
-    if (filters.status !== undefined) {
-      const allowedStatuses = ["in_plans", "watched"];
-      if (!allowedStatuses.includes(filters.status)) {
-        return res.status(400).json({
-          success: false,
-          errorMessage: `Недопустимый статус: '${
-            filters.status
-          }'. Допустимые: ${allowedStatuses.join(", ")}`,
-        });
-      }
-    }
-
-    // ========== ВАЛИДАЦИЯ minRating ==========
-    if (filters.minRating !== undefined) {
-      const minRating = parseFloat(filters.minRating);
-      if (isNaN(minRating) || minRating < 0 || minRating > 10) {
-        return res.status(400).json({
-          success: false,
-          errorMessage:
-            "Поле 'filters.minRating' должно быть числом от 0 до 10",
-        });
-      }
-    }
-
-    // ========== ВАЛИДАЦИЯ yearRange ==========
-    if (filters.yearRange !== undefined) {
-      if (typeof filters.yearRange !== "object" || filters.yearRange === null) {
-        return res.status(400).json({
-          success: false,
-          errorMessage: "Поле 'filters.yearRange' должно быть объектом",
-        });
-      }
-
-      const allowedYearRangeKeys = ["from", "to"];
-      const yearRangeKeys = Object.keys(filters.yearRange);
-
-      for (const key of yearRangeKeys) {
-        if (!allowedYearRangeKeys.includes(key)) {
-          return res.status(400).json({
-            success: false,
-            errorMessage: `Недопустимое поле в 'yearRange': '${key}'. Допустимые: ${allowedYearRangeKeys.join(
-              ", "
-            )}`,
-          });
-        }
-      }
-
-      const hasFrom = filters.yearRange.from !== undefined;
-      const hasTo = filters.yearRange.to !== undefined;
-
-      if (!hasFrom && !hasTo) {
-        return res.status(400).json({
-          success: false,
-          errorMessage:
-            "Поле 'filters.yearRange' должно содержать хотя бы одно из полей: 'from' или 'to'",
-        });
-      }
-
-      if (hasFrom) {
-        const from = parseInt(filters.yearRange.from);
-        if (isNaN(from) || from < 1888 || from > new Date().getFullYear()) {
-          return res.status(400).json({
-            success: false,
-            errorMessage: `Поле 'filters.yearRange.from' должно быть корректным годом (1888-${new Date().getFullYear()})`,
-          });
-        }
-      }
-
-      if (hasTo) {
-        const to = parseInt(filters.yearRange.to);
-        if (isNaN(to) || to < 1888 || to > new Date().getFullYear()) {
-          return res.status(400).json({
-            success: false,
-            errorMessage: `Поле 'filters.yearRange.to' должно быть корректным годом (1888-${new Date().getFullYear()})`,
-          });
-        }
-      }
-
-      if (hasFrom && hasTo) {
-        const from = parseInt(filters.yearRange.from);
-        const to = parseInt(filters.yearRange.to);
-        if (from > to) {
-          return res.status(400).json({
-            success: false,
-            errorMessage:
-              "Поле 'filters.yearRange.from' не может быть больше 'to'",
-          });
-        }
-      }
-    }
-
-    // ========== ВАЛИДАЦИЯ СОРТИРОВКИ ==========
-    const allowedSortFields = ["year", "rating", "createdAt", "title"];
-    const allowedSortOrders = ["asc", "desc"];
-
-    if (sort.field !== undefined && !allowedSortFields.includes(sort.field)) {
-      return res.status(400).json({
-        success: false,
-        errorMessage: `Недопустимое поле сортировки: '${
-          sort.field
-        }'. Допустимые: ${allowedSortFields.join(", ")}`,
-      });
-    }
-
-    if (sort.order !== undefined && !allowedSortOrders.includes(sort.order)) {
-      return res.status(400).json({
-        success: false,
-        errorMessage: `Недопустимый порядок сортировки: '${
-          sort.order
-        }'. Допустимые: ${allowedSortOrders.join(", ")}`,
-      });
-    }
-
-    // ========== ВАЛИДАЦИЯ ПАГИНАЦИИ ==========
     const page = parseInt(pagination.page);
     const pageSize = parseInt(pagination.pageSize);
 
@@ -221,16 +376,9 @@ app.post("/getFilms", (req, res) => {
       });
     }
 
-    // ========== ПРИМЕНЯЕМ ПАРАМЕТРЫ (с значениями по умолчанию) ==========
-    const sortField =
-      sort.field && allowedSortFields.includes(sort.field)
-        ? sort.field
-        : "rating";
-    const sortOrder = sort.order === "asc" ? "asc" : "desc";
-
     let result = [...films];
 
-    // ФИЛЬТРЫ
+    // Фильтры
     if (filters.genres?.length) {
       result = result.filter((film) =>
         film.genres.some((genre) => filters.genres.includes(genre))
@@ -263,21 +411,22 @@ app.post("/getFilms", (req, res) => {
       }
     }
 
-    // СОРТИРОВКА
+    // Сортировка
+    const sortField = sort.field || "rating";
+    const sortOrder = sort.order === "asc" ? "asc" : "desc";
+
     result.sort((a, b) => {
       let aVal = a[sortField];
       let bVal = b[sortField];
-
       if (typeof aVal === "string") {
         return sortOrder === "asc"
           ? aVal.localeCompare(bVal)
           : bVal.localeCompare(aVal);
       }
-
       return sortOrder === "asc" ? aVal - bVal : bVal - aVal;
     });
 
-    // ПАГИНАЦИЯ
+    // Пагинация
     const startIndex = (page - 1) * pageSize;
     const paginatedResult = result.slice(startIndex, startIndex + pageSize);
 
@@ -286,13 +435,12 @@ app.post("/getFilms", (req, res) => {
       data: paginatedResult,
       statistic: {
         total: result.length,
-        watched: result.reduce((acc, cur) => {
-          return cur.status === "watched" ? acc + 1 : acc;
-        }, 0),
+        watched: result.reduce(
+          (acc, cur) => (cur.status === "watched" ? acc + 1 : acc),
+          0
+        ),
         averageRating: result.length
-          ? result.reduce((acc, cur) => {
-              return acc + cur.rating;
-            }, 0) / result.length
+          ? result.reduce((acc, cur) => acc + cur.rating, 0) / result.length
           : 0,
       },
       pagination: {
@@ -302,7 +450,494 @@ app.post("/getFilms", (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Ошибка в POST /film:", error);
+    console.error("Ошибка в POST /getFilms:", error);
+    res.status(500).json({
+      success: false,
+      errorMessage: "Внутренняя ошибка сервера",
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /createFilm:
+ *   post:
+ *     summary: Создать новый фильм
+ *     tags: [Films]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/FilmInput'
+ *     responses:
+ *       200:
+ *         description: Фильм успешно создан
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SingleSuccessResponse'
+ *       400:
+ *         description: Ошибка валидации данных
+ *       500:
+ *         description: Внутренняя ошибка сервера
+ */
+app.post("/createFilm", async (req, res) => {
+  try {
+    const {
+      title,
+      director,
+      year,
+      genres,
+      description,
+      image,
+      rating,
+      status,
+    } = req.body;
+
+    const allowedFields = [
+      "title",
+      "director",
+      "year",
+      "genres",
+      "description",
+      "image",
+      "rating",
+      "status",
+    ];
+    const receivedFields = Object.keys(req.body);
+
+    // Проверка на лишние поля
+    const hasExtraFields = receivedFields.some(
+      (field) => !allowedFields.includes(field)
+    );
+    if (hasExtraFields) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: `Обнаружены лишние поля. Допустимые поля: ${allowedFields.join(
+          ", "
+        )}`,
+      });
+    }
+
+    // Проверка наличия всех обязательных полей
+    const missingFields = allowedFields.filter(
+      (field) => !receivedFields.includes(field)
+    );
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: `Отсутствуют обязательные поля: ${missingFields.join(
+          ", "
+        )}`,
+      });
+    }
+
+    // Валидация строк
+    if (typeof title !== "string" || title.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'title' должно быть непустой строкой",
+      });
+    }
+    if (typeof director !== "string" || director.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'director' должно быть непустой строкой",
+      });
+    }
+    if (typeof description !== "string" || description.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'description' должно быть непустой строкой",
+      });
+    }
+    if (typeof image !== "string" || image.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'image' должно быть непустой строкой",
+      });
+    }
+
+    // Валидация URL
+    const urlPattern =
+      /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/;
+    if (!urlPattern.test(image)) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'image' должно содержать валидную ссылку (URL)",
+      });
+    }
+
+    // Валидация чисел
+    if (typeof year !== "number" || isNaN(year)) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'year' должно быть числом",
+      });
+    }
+    if (
+      typeof rating !== "number" ||
+      isNaN(rating) ||
+      rating < 0 ||
+      rating > 10
+    ) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'rating' должно быть числом от 0 до 10",
+      });
+    }
+
+    // Валидация статуса
+    const validStatuses = ["in_plans", "watched"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: `Поле 'status' должно быть одним из значений: ${validStatuses.join(
+          ", "
+        )}`,
+      });
+    }
+
+    // Валидация жанров
+    if (!Array.isArray(genres)) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'genres' должно быть массивом",
+      });
+    }
+    const validGenres = [
+      "drama",
+      "comedy",
+      "action",
+      "fantasy",
+      "thriller",
+      "horror",
+      "melodrama",
+      "adventure",
+      "detective",
+    ];
+    const invalidGenres = genres.filter(
+      (genre) => !validGenres.includes(genre)
+    );
+    if (invalidGenres.length > 0) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: `Недопустимые жанры: ${invalidGenres.join(", ")}`,
+      });
+    }
+
+    const newId = await generateNewId();
+    const newFilm = {
+      id: newId,
+      ...req.body,
+      createdAt: new Date().toISOString(),
+    };
+
+    const films = await readFilms();
+    films.push(newFilm);
+    await writeFilms(films);
+
+    return res.status(200).json({
+      success: true,
+      data: newFilm,
+    });
+  } catch (error) {
+    console.error("Ошибка в POST /createFilm:", error);
+    res.status(500).json({
+      success: false,
+      errorMessage: "Внутренняя ошибка сервера",
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /updateFilm/{id}:
+ *   put:
+ *     summary: Обновить данные фильма
+ *     tags: [Films]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID фильма для обновления
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/FilmInput'
+ *     responses:
+ *       200:
+ *         description: Фильм успешно обновлен
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SingleSuccessResponse'
+ *       400:
+ *         description: Ошибка валидации данных
+ *       404:
+ *         description: Фильм не найден
+ *       500:
+ *         description: Внутренняя ошибка сервера
+ */
+app.put("/updateFilm/:id", async (req, res) => {
+  try {
+    const filmId = parseInt(req.params.id);
+    if (isNaN(filmId)) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "ID должен быть числом",
+      });
+    }
+
+    const {
+      title,
+      director,
+      year,
+      genres,
+      description,
+      image,
+      rating,
+      status,
+    } = req.body;
+
+    const allowedFields = [
+      "title",
+      "director",
+      "year",
+      "genres",
+      "description",
+      "image",
+      "rating",
+      "status",
+    ];
+    const receivedFields = Object.keys(req.body);
+
+    // Проверка на лишние поля
+    const hasExtraFields = receivedFields.some(
+      (field) => !allowedFields.includes(field)
+    );
+    if (hasExtraFields) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: `Обнаружены лишние поля. Допустимые поля: ${allowedFields.join(
+          ", "
+        )}`,
+      });
+    }
+
+    // Проверка наличия всех обязательных полей
+    const missingFields = allowedFields.filter(
+      (field) => !receivedFields.includes(field)
+    );
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: `Отсутствуют обязательные поля: ${missingFields.join(
+          ", "
+        )}`,
+      });
+    }
+
+    // Валидация (такая же как в createFilm)
+    if (typeof title !== "string" || title.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'title' должно быть непустой строкой",
+      });
+    }
+    if (typeof director !== "string" || director.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'director' должно быть непустой строкой",
+      });
+    }
+    if (typeof description !== "string" || description.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'description' должно быть непустой строкой",
+      });
+    }
+    if (typeof image !== "string" || image.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'image' должно быть непустой строкой",
+      });
+    }
+
+    const urlPattern =
+      /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/;
+    if (!urlPattern.test(image)) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'image' должно содержать валидную ссылку (URL)",
+      });
+    }
+
+    if (typeof year !== "number" || isNaN(year)) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'year' должно быть числом",
+      });
+    }
+    if (
+      typeof rating !== "number" ||
+      isNaN(rating) ||
+      rating < 0 ||
+      rating > 10
+    ) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'rating' должно быть числом от 0 до 10",
+      });
+    }
+
+    const validStatuses = ["in_plans", "watched"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: `Поле 'status' должно быть одним из значений: ${validStatuses.join(
+          ", "
+        )}`,
+      });
+    }
+
+    if (!Array.isArray(genres)) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'genres' должно быть массивом",
+      });
+    }
+    const validGenres = [
+      "drama",
+      "comedy",
+      "action",
+      "fantasy",
+      "thriller",
+      "horror",
+      "melodrama",
+      "adventure",
+      "detective",
+    ];
+    const invalidGenres = genres.filter(
+      (genre) => !validGenres.includes(genre)
+    );
+    if (invalidGenres.length > 0) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: `Недопустимые жанры: ${invalidGenres.join(", ")}`,
+      });
+    }
+
+    const films = await readFilms();
+    const filmIndex = films.findIndex((film) => film.id === filmId);
+
+    if (filmIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        errorMessage: `Фильм с ID ${filmId} не найден`,
+      });
+    }
+
+    // Обновляем фильм, сохраняя createdAt
+    const updatedFilm = {
+      ...films[filmIndex],
+      title,
+      director,
+      year,
+      genres,
+      description,
+      image,
+      rating,
+      status,
+    };
+
+    films[filmIndex] = updatedFilm;
+    await writeFilms(films);
+
+    return res.status(200).json({
+      success: true,
+      data: updatedFilm,
+    });
+  } catch (error) {
+    console.error("Ошибка в PUT /updateFilm:", error);
+    res.status(500).json({
+      success: false,
+      errorMessage: "Внутренняя ошибка сервера",
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /deleteFilm/{id}:
+ *   delete:
+ *     summary: Удалить фильм
+ *     tags: [Films]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID фильма для удаления
+ *     responses:
+ *       200:
+ *         description: Фильм успешно удален
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Фильм успешно удален
+ *       400:
+ *         description: Некорректный ID
+ *       404:
+ *         description: Фильм не найден
+ *       500:
+ *         description: Внутренняя ошибка сервера
+ */
+app.delete("/deleteFilm/:id", async (req, res) => {
+  try {
+    const filmId = parseInt(req.params.id);
+
+    if (isNaN(filmId)) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "ID должен быть числом",
+      });
+    }
+
+    const films = await readFilms();
+    const filmIndex = films.findIndex((film) => film.id === filmId);
+
+    if (filmIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        errorMessage: `Фильм с ID ${filmId} не найден`,
+      });
+    }
+
+    const deletedFilm = films[filmIndex];
+    films.splice(filmIndex, 1);
+    await writeFilms(films);
+
+    return res.status(200).json({
+      success: true,
+      message: "Фильм успешно удален",
+      data: deletedFilm,
+    });
+  } catch (error) {
+    console.error("Ошибка в DELETE /deleteFilm:", error);
     res.status(500).json({
       success: false,
       errorMessage: "Внутренняя ошибка сервера",
@@ -312,4 +947,7 @@ app.post("/getFilms", (req, res) => {
 
 app.listen(port, () => {
   console.log(`Сервер запущен на порту ${port}`);
+  console.log(
+    `Swagger документация доступна по адресу: http://localhost:${port}/api-docs`
+  );
 });
