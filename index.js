@@ -16,6 +16,10 @@ app.use(express.static(join(__dirname, "public")));
 app.use(express.json());
 app.use(cors());
 
+app.use((req, res, next) => {
+  setTimeout(next, 1000);
+});
+
 // Путь к файлу с данными
 const DATA_FILE = join(__dirname, "data", "films.json");
 
@@ -104,24 +108,21 @@ const swaggerOptions = {
               minimum: 1888,
               example: 2010,
             },
-            genres: {
-              type: "array",
-              description: "Жанры фильма",
-              items: {
-                type: "string",
-                enum: [
-                  "drama",
-                  "comedy",
-                  "action",
-                  "fantasy",
-                  "thriller",
-                  "horror",
-                  "melodrama",
-                  "adventure",
-                  "detective",
-                ],
-              },
-              example: ["action", "thriller"],
+            genre: {
+              type: "string",
+              description: "Жанр фильма",
+              enum: [
+                "drama",
+                "comedy",
+                "action",
+                "fantasy",
+                "thriller",
+                "horror",
+                "melodrama",
+                "adventure",
+                "detective",
+              ],
+              example: "drama",
             },
             description: {
               type: "string",
@@ -159,7 +160,7 @@ const swaggerOptions = {
             "title",
             "director",
             "year",
-            "genres",
+            "genre",
             "description",
             "image",
             "rating",
@@ -175,10 +176,20 @@ const swaggerOptions = {
               example: "Lana Wachowski, Lilly Wachowski",
             },
             year: { type: "integer", example: 1999 },
-            genres: {
-              type: "array",
-              items: { type: "string" },
-              example: ["action", "sci-fi"],
+            genre: {
+              type: "string",
+              enum: [
+                "drama",
+                "comedy",
+                "action",
+                "fantasy",
+                "thriller",
+                "horror",
+                "melodrama",
+                "adventure",
+                "detective",
+              ],
+              example: "drama",
             },
             description: {
               type: "string",
@@ -200,7 +211,7 @@ const swaggerOptions = {
             "title",
             "director",
             "year",
-            "genres",
+            "genre",
             "description",
             "image",
             "rating",
@@ -223,10 +234,20 @@ const swaggerOptions = {
         Filters: {
           type: "object",
           properties: {
-            genres: {
-              type: "array",
-              items: { type: "string" },
-              example: ["action", "drama"],
+            genre: {
+              type: "string",
+              enum: [
+                "drama",
+                "comedy",
+                "action",
+                "fantasy",
+                "thriller",
+                "horror",
+                "melodrama",
+                "adventure",
+                "detective",
+              ],
+              example: "drama",
             },
             status: {
               type: "string",
@@ -237,7 +258,7 @@ const swaggerOptions = {
               type: "number",
               minimum: 0,
               maximum: 10,
-              example: 7.5,
+              example: 7,
             },
             yearRange: {
               type: "object",
@@ -332,6 +353,9 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
  *                 $ref: '#/components/schemas/Sort'
  *               pagination:
  *                 $ref: '#/components/schemas/Pagination'
+ *               searchString:
+ *                 type: string
+ *                 example: "Тёмный рыцарь"
  *     responses:
  *       200:
  *         description: Успешное получение списка фильмов
@@ -347,9 +371,13 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 app.post("/getFilms", async (req, res) => {
   try {
     const films = await readFilms();
-    const { filters = {}, sort = {}, pagination = {} } = req.body;
+    const {
+      filters = {},
+      sort = {},
+      pagination = {},
+      searchString = "",
+    } = req.body;
 
-    // Валидация (сокращена для читаемости, но вы можете добавить полную валидацию из предыдущего кода)
     if (!pagination || typeof pagination !== "object") {
       return res.status(400).json({
         success: false,
@@ -378,11 +406,22 @@ app.post("/getFilms", async (req, res) => {
 
     let result = [...films];
 
-    // Фильтры
-    if (filters.genres?.length) {
+    if (searchString && typeof searchString !== "string") {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Поле 'searchString' должно быть строкой",
+      });
+    }
+
+    if (searchString) {
       result = result.filter((film) =>
-        film.genres.some((genre) => filters.genres.includes(genre))
+        film.title.toLowerCase().includes(searchString.toLowerCase())
       );
+    }
+
+    // Фильтры
+    if (filters.genre) {
+      result = result.filter((film) => film.genre === filters.genre);
     }
 
     if (filters.status) {
@@ -390,7 +429,7 @@ app.post("/getFilms", async (req, res) => {
     }
 
     if (filters.minRating !== undefined) {
-      const minRating = parseFloat(filters.minRating);
+      const minRating = parseInt(filters.minRating);
       if (!isNaN(minRating)) {
         result = result.filter((film) => film.rating >= minRating);
       }
@@ -484,22 +523,14 @@ app.post("/getFilms", async (req, res) => {
  */
 app.post("/createFilm", async (req, res) => {
   try {
-    const {
-      title,
-      director,
-      year,
-      genres,
-      description,
-      image,
-      rating,
-      status,
-    } = req.body;
+    const { title, director, year, genre, description, image, rating, status } =
+      req.body;
 
     const allowedFields = [
       "title",
       "director",
       "year",
-      "genres",
+      "genre",
       "description",
       "image",
       "rating",
@@ -599,13 +630,6 @@ app.post("/createFilm", async (req, res) => {
       });
     }
 
-    // Валидация жанров
-    if (!Array.isArray(genres)) {
-      return res.status(400).json({
-        success: false,
-        errorMessage: "Поле 'genres' должно быть массивом",
-      });
-    }
     const validGenres = [
       "drama",
       "comedy",
@@ -617,13 +641,11 @@ app.post("/createFilm", async (req, res) => {
       "adventure",
       "detective",
     ];
-    const invalidGenres = genres.filter(
-      (genre) => !validGenres.includes(genre)
-    );
-    if (invalidGenres.length > 0) {
+    const invalidGenre = !validGenres.includes(genre);
+    if (invalidGenre) {
       return res.status(400).json({
         success: false,
-        errorMessage: `Недопустимые жанры: ${invalidGenres.join(", ")}`,
+        errorMessage: `Недопустимый жанр: ${genre}`,
       });
     }
 
@@ -694,22 +716,14 @@ app.put("/updateFilm/:id", async (req, res) => {
       });
     }
 
-    const {
-      title,
-      director,
-      year,
-      genres,
-      description,
-      image,
-      rating,
-      status,
-    } = req.body;
+    const { title, director, year, genre, description, image, rating, status } =
+      req.body;
 
     const allowedFields = [
       "title",
       "director",
       "year",
-      "genres",
+      "genre",
       "description",
       "image",
       "rating",
@@ -805,13 +819,6 @@ app.put("/updateFilm/:id", async (req, res) => {
         )}`,
       });
     }
-
-    if (!Array.isArray(genres)) {
-      return res.status(400).json({
-        success: false,
-        errorMessage: "Поле 'genres' должно быть массивом",
-      });
-    }
     const validGenres = [
       "drama",
       "comedy",
@@ -823,13 +830,11 @@ app.put("/updateFilm/:id", async (req, res) => {
       "adventure",
       "detective",
     ];
-    const invalidGenres = genres.filter(
-      (genre) => !validGenres.includes(genre)
-    );
-    if (invalidGenres.length > 0) {
+    const invalidGenre = !validGenres.includes(genre);
+    if (invalidGenre) {
       return res.status(400).json({
         success: false,
-        errorMessage: `Недопустимые жанры: ${invalidGenres.join(", ")}`,
+        errorMessage: `Недопустимый жанр: ${genre}`,
       });
     }
 
@@ -849,7 +854,7 @@ app.put("/updateFilm/:id", async (req, res) => {
       title,
       director,
       year,
-      genres,
+      genre,
       description,
       image,
       rating,
