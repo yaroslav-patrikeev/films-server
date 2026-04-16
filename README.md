@@ -12,6 +12,10 @@ npm run start
 
 Сервер стартует на `http://localhost:3000`
 
+## Типы
+
+@yp-mentor/films-server-types
+
 ## Swagger документация
 
 ```
