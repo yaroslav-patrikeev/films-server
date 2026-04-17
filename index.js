@@ -931,6 +931,8 @@ app.put("/updateFilm/:id", async (req, res) => {
  *                 message:
  *                   type: string
  *                   example: Фильм успешно удален
+ *                 data:
+ *                   $ref: '#/components/schemas/Film'
  *       400:
  *         description: Некорректный ID
  *       404:
@@ -970,6 +972,108 @@ app.delete("/deleteFilm/:id", async (req, res) => {
     });
   } catch (error) {
     console.error("Ошибка в DELETE /deleteFilm:", error);
+    res.status(500).json({
+      success: false,
+      errorMessage: "Внутренняя ошибка сервера",
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /changeFilmStatus/{id}:
+ *   patch:
+ *     summary: Изменить статус фильма
+ *     tags: [Films]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID фильма для изменения статуса
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum:
+ *                  - in_plans
+ *                  - watched
+ *                 example: in_plans
+ *
+ *     responses:
+ *       200:
+ *         description: Статус фильма успешно изменен
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Статус фильма успешно изменен
+ *                 data:
+ *                   $ref: '#/components/schemas/Film'
+ *       400:
+ *         description: Ошибка валидации данных
+ *       404:
+ *         description: Фильм не найден
+ *       500:
+ *         description: Внутренняя ошибка сервера
+ */
+app.patch("/changeFilmStatus/:id", async (req, res) => {
+  try {
+    const filmId = parseInt(req.params.id);
+    if (isNaN(filmId)) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "ID должен быть числом",
+      });
+    }
+    const { status } = req.body;
+
+    const films = await readFilms();
+    const filmIndex = films.findIndex((film) => film.id === filmId);
+
+    if (filmIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        errorMessage: `Фильм с ID ${filmId} не найден`,
+      });
+    }
+
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Пропущено обязательное поле 'status'",
+      });
+    }
+    const validStatuses = ["in_plans", "watched"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: `Поле 'status' должно быть одним из значений: ${validStatuses.join(
+          ", "
+        )}`,
+      });
+    }
+    films[filmIndex] = { ...films[filmIndex], status };
+    await writeFilms(films);
+    return res.status(200).json({
+      success: true,
+      message: `Статус фильма успешно изменен на ${status}`,
+      data: films[filmIndex],
+    });
+  } catch (error) {
+    console.error("Ошибка в PATCH /changeFilmStatus:", error);
     res.status(500).json({
       success: false,
       errorMessage: "Внутренняя ошибка сервера",
