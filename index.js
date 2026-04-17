@@ -159,16 +159,7 @@ const swaggerOptions = {
               example: "2024-01-15T10:30:00.000Z",
             },
           },
-          required: [
-            "title",
-            "director",
-            "year",
-            "genres",
-            "description",
-            "image",
-            "rating",
-            "status",
-          ],
+          required: ["title", "director", "year", "genres", "rating", "status"],
         },
         FilmInput: {
           type: "object",
@@ -213,16 +204,7 @@ const swaggerOptions = {
               example: "watched",
             },
           },
-          required: [
-            "title",
-            "director",
-            "year",
-            "genres",
-            "description",
-            "image",
-            "rating",
-            "status",
-          ],
+          required: ["title", "director", "year", "genres", "rating", "status"],
         },
         Pagination: {
           type: "object",
@@ -555,6 +537,15 @@ app.post("/createFilm", async (req, res) => {
       "rating",
       "status",
     ];
+
+    const requiredFields = [
+      "title",
+      "director",
+      "year",
+      "genres",
+      "rating",
+      "status",
+    ];
     const receivedFields = Object.keys(req.body);
 
     // Проверка на лишние поля
@@ -571,7 +562,7 @@ app.post("/createFilm", async (req, res) => {
     }
 
     // Проверка наличия всех обязательных полей
-    const missingFields = allowedFields.filter(
+    const missingFields = requiredFields.filter(
       (field) => !receivedFields.includes(field)
     );
     if (missingFields.length > 0) {
@@ -596,13 +587,16 @@ app.post("/createFilm", async (req, res) => {
         errorMessage: "Поле 'director' должно быть непустой строкой",
       });
     }
-    if (typeof description !== "string" || description.trim() === "") {
+    if (
+      description &&
+      (typeof description !== "string" || description.trim() === "")
+    ) {
       return res.status(400).json({
         success: false,
         errorMessage: "Поле 'description' должно быть непустой строкой",
       });
     }
-    if (typeof image !== "string" || image.trim() === "") {
+    if (image && (typeof image !== "string" || image.trim() === "")) {
       return res.status(400).json({
         success: false,
         errorMessage: "Поле 'image' должно быть непустой строкой",
@@ -612,7 +606,7 @@ app.post("/createFilm", async (req, res) => {
     // Валидация URL
     const urlPattern =
       /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/;
-    if (!urlPattern.test(image)) {
+    if (image && !urlPattern.test(image)) {
       return res.status(400).json({
         success: false,
         errorMessage: "Поле 'image' должно содержать валидную ссылку (URL)",
@@ -756,6 +750,15 @@ app.put("/updateFilm/:id", async (req, res) => {
       "rating",
       "status",
     ];
+
+    const requiredFields = [
+      "title",
+      "director",
+      "year",
+      "genres",
+      "rating",
+      "status",
+    ];
     const receivedFields = Object.keys(req.body);
 
     // Проверка на лишние поля
@@ -772,7 +775,7 @@ app.put("/updateFilm/:id", async (req, res) => {
     }
 
     // Проверка наличия всех обязательных полей
-    const missingFields = allowedFields.filter(
+    const missingFields = requiredFields.filter(
       (field) => !receivedFields.includes(field)
     );
     if (missingFields.length > 0) {
@@ -797,13 +800,16 @@ app.put("/updateFilm/:id", async (req, res) => {
         errorMessage: "Поле 'director' должно быть непустой строкой",
       });
     }
-    if (typeof description !== "string" || description.trim() === "") {
+    if (
+      description &&
+      (typeof description !== "string" || description.trim() === "")
+    ) {
       return res.status(400).json({
         success: false,
         errorMessage: "Поле 'description' должно быть непустой строкой",
       });
     }
-    if (typeof image !== "string" || image.trim() === "") {
+    if (image && (typeof image !== "string" || image.trim() === "")) {
       return res.status(400).json({
         success: false,
         errorMessage: "Поле 'image' должно быть непустой строкой",
@@ -812,7 +818,7 @@ app.put("/updateFilm/:id", async (req, res) => {
 
     const urlPattern =
       /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/;
-    if (!urlPattern.test(image)) {
+    if (image && !urlPattern.test(image)) {
       return res.status(400).json({
         success: false,
         errorMessage: "Поле 'image' должно содержать валидную ссылку (URL)",
