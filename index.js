@@ -108,21 +108,24 @@ const swaggerOptions = {
               minimum: 1888,
               example: 2010,
             },
-            genre: {
-              type: "string",
-              description: "Жанр фильма",
-              enum: [
-                "drama",
-                "comedy",
-                "action",
-                "fantasy",
-                "thriller",
-                "horror",
-                "melodrama",
-                "adventure",
-                "detective",
-              ],
-              example: "drama",
+            genres: {
+              type: "array",
+              description: "Жанры фильма",
+              items: {
+                type: "string",
+                enum: [
+                  "drama",
+                  "comedy",
+                  "action",
+                  "fantasy",
+                  "thriller",
+                  "horror",
+                  "melodrama",
+                  "adventure",
+                  "detective",
+                ],
+              },
+              example: ["drama", "fantasy"],
             },
             description: {
               type: "string",
@@ -160,7 +163,7 @@ const swaggerOptions = {
             "title",
             "director",
             "year",
-            "genre",
+            "genres",
             "description",
             "image",
             "rating",
@@ -176,20 +179,23 @@ const swaggerOptions = {
               example: "Lana Wachowski, Lilly Wachowski",
             },
             year: { type: "integer", example: 1999 },
-            genre: {
-              type: "string",
-              enum: [
-                "drama",
-                "comedy",
-                "action",
-                "fantasy",
-                "thriller",
-                "horror",
-                "melodrama",
-                "adventure",
-                "detective",
-              ],
-              example: "drama",
+            genres: {
+              type: "array",
+              items: {
+                type: "string",
+                enum: [
+                  "drama",
+                  "comedy",
+                  "action",
+                  "fantasy",
+                  "thriller",
+                  "horror",
+                  "melodrama",
+                  "adventure",
+                  "detective",
+                ],
+              },
+              example: ["drama", "fantasy"],
             },
             description: {
               type: "string",
@@ -211,7 +217,7 @@ const swaggerOptions = {
             "title",
             "director",
             "year",
-            "genre",
+            "genres",
             "description",
             "image",
             "rating",
@@ -414,9 +420,14 @@ app.post("/getFilms", async (req, res) => {
     }
 
     if (searchString) {
-      result = result.filter((film) =>
-        film.title.toLowerCase().includes(searchString.toLowerCase())
-      );
+      result = result.filter((film) => {
+        const lcSearchString = searchString.toLowerCase();
+        return (
+          film.title.toLowerCase().includes(lcSearchString) ||
+          film.director.toLowerCase().includes(lcSearchString) ||
+          film.description.toLowerCase().includes(lcSearchString)
+        );
+      });
     }
 
     // Фильтры
@@ -523,14 +534,22 @@ app.post("/getFilms", async (req, res) => {
  */
 app.post("/createFilm", async (req, res) => {
   try {
-    const { title, director, year, genre, description, image, rating, status } =
-      req.body;
+    const {
+      title,
+      director,
+      year,
+      genres,
+      description,
+      image,
+      rating,
+      status,
+    } = req.body;
 
     const allowedFields = [
       "title",
       "director",
       "year",
-      "genre",
+      "genres",
       "description",
       "image",
       "rating",
@@ -641,11 +660,11 @@ app.post("/createFilm", async (req, res) => {
       "adventure",
       "detective",
     ];
-    const invalidGenre = !validGenres.includes(genre);
-    if (invalidGenre) {
+    const invalidGenres = genres.filter((el) => !validGenres.includes(el));
+    if (invalidGenres.length > 0) {
       return res.status(400).json({
         success: false,
-        errorMessage: `Недопустимый жанр: ${genre}`,
+        errorMessage: `Недопустимые жанры: ${invalidGenres}`,
       });
     }
 
@@ -716,14 +735,22 @@ app.put("/updateFilm/:id", async (req, res) => {
       });
     }
 
-    const { title, director, year, genre, description, image, rating, status } =
-      req.body;
+    const {
+      title,
+      director,
+      year,
+      genres,
+      description,
+      image,
+      rating,
+      status,
+    } = req.body;
 
     const allowedFields = [
       "title",
       "director",
       "year",
-      "genre",
+      "genres",
       "description",
       "image",
       "rating",
@@ -830,11 +857,11 @@ app.put("/updateFilm/:id", async (req, res) => {
       "adventure",
       "detective",
     ];
-    const invalidGenre = !validGenres.includes(genre);
-    if (invalidGenre) {
+    const invalidGenres = genres.filter((el) => !validGenres.includes(el));
+    if (invalidGenres.length > 0) {
       return res.status(400).json({
         success: false,
-        errorMessage: `Недопустимый жанр: ${genre}`,
+        errorMessage: `Недопустимые жанры: ${invalidGenres}`,
       });
     }
 
@@ -854,7 +881,7 @@ app.put("/updateFilm/:id", async (req, res) => {
       title,
       director,
       year,
-      genre,
+      genres,
       description,
       image,
       rating,
