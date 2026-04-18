@@ -225,6 +225,7 @@ const swaggerOptions = {
             genre: {
               type: "string",
               enum: [
+                "all",
                 "drama",
                 "comedy",
                 "action",
@@ -239,7 +240,7 @@ const swaggerOptions = {
             },
             status: {
               type: "string",
-              enum: ["in_plans", "watched"],
+              enum: ["all", "in_plans", "watched"],
               example: "watched",
             },
             minRating: {
@@ -413,11 +414,11 @@ app.post("/getFilms", async (req, res) => {
     }
 
     // Фильтры
-    if (filters.genre) {
+    if (filters.genre && filters.genre !== "all") {
       result = result.filter((film) => film.genre === filters.genre);
     }
 
-    if (filters.status) {
+    if (filters.status && filters.status !== "all") {
       result = result.filter((film) => film.status === filters.status);
     }
 
