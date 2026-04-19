@@ -467,7 +467,7 @@ app.post("/getFilms", async (req, res) => {
       success: true,
       data: paginatedResult,
       statistic: {
-        total: result.length,
+        total: films.length,
         watched: films.reduce(
           (acc, cur) => (cur.status === "watched" ? acc + 1 : acc),
           0
