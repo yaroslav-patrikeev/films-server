@@ -415,7 +415,7 @@ app.post("/getFilms", async (req, res) => {
 
     // Фильтры
     if (filters.genre && filters.genre !== "all") {
-      result = result.filter((film) => film.genre === filters.genre);
+      result = result.filter((film) => film.genres.includes(filters.genre));
     }
 
     if (filters.status && filters.status !== "all") {
