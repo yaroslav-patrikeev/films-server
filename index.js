@@ -468,12 +468,12 @@ app.post("/getFilms", async (req, res) => {
       data: paginatedResult,
       statistic: {
         total: result.length,
-        watched: result.reduce(
+        watched: films.reduce(
           (acc, cur) => (cur.status === "watched" ? acc + 1 : acc),
           0
         ),
-        averageRating: result.length
-          ? result.reduce((acc, cur) => acc + cur.rating, 0) / result.length
+        averageRating: films.length
+          ? films.reduce((acc, cur) => acc + cur.rating, 0) / films.length
           : 0,
       },
       pagination: {
