@@ -295,7 +295,7 @@ const swaggerOptions = {
               properties: {
                 currentPage: { type: "integer", example: 1 },
                 pageSize: { type: "integer", example: 10 },
-                totalPages: { type: "integer", example: 15 },
+                total: { type: "integer", example: 15 },
               },
             },
           },
@@ -479,7 +479,7 @@ app.post("/getFilms", async (req, res) => {
       pagination: {
         currentPage: page,
         pageSize: pageSize,
-        totalPages: Math.ceil(result.length / pageSize),
+        total: result.length,
       },
     });
   } catch (error) {
