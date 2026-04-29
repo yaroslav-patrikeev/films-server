@@ -6,6 +6,18 @@ import fs from "fs/promises";
 import { existsSync } from "fs";
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
+import cookieParser from "cookie-parser";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import rateLimit from "express-rate-limit";
+import { body, validationResult } from "express-validator";
+import helmet from "helmet";
+
+// Секретный ключ для JWT (в продакшене хранить в .env)
+const JWT_SECRET = "your-super-secret-jwt-key-change-this";
+const REFRESH_TOKEN_SECRET = "your-refresh-token-secret-key";
+const ACCESS_TOKEN_EXPIRY = "15m"; // 15 минут
+const REFRESH_TOKEN_EXPIRY = "7d"; // 7 дней
 
 const app = express();
 const port = 3000;
@@ -14,6 +26,29 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 app.use(express.static(join(__dirname, "public")));
 
 app.use(express.json());
+app.use(cookieParser());
+
+// Добавить helmet для безопасности
+app.use(helmet());
+
+// Ограничение количества запросов
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 минут
+  max: 100, // максимум 100 запросов с одного IP
+  message: {
+    success: false,
+    errorMessage: "Слишком много запросов, попробуйте позже",
+  },
+});
+app.use("/api/", limiter);
+
+// Более строгий лимит для авторизации
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5, // 5 попыток входа
+  skipSuccessfulRequests: true,
+});
+
 app.use(cors());
 
 app.use((req, res, next) => {
@@ -22,6 +57,146 @@ app.use((req, res, next) => {
 
 // Путь к файлу с данными
 const DATA_FILE = join(__dirname, "data", "films.json");
+
+const USERS_FILE = join(__dirname, "data", "users.json");
+const BLACKLIST_FILE = join(__dirname, "data", "token-blacklist.json");
+
+// Функции для работы с пользователями
+async function readUsers() {
+  try {
+    const dataDir = join(__dirname, "data");
+    if (!existsSync(dataDir)) await fs.mkdir(dataDir, { recursive: true });
+    if (!existsSync(USERS_FILE)) {
+      // Создаем тестового пользователя
+      const hashedPassword = await bcrypt.hash("admin123", 10);
+      const defaultUser = {
+        id: 1,
+        username: "admin",
+        email: "admin@example.com",
+        password: hashedPassword,
+        role: "admin",
+        createdAt: new Date().toISOString(),
+        isActive: true,
+        loginAttempts: 0,
+        lockUntil: null,
+      };
+      await fs.writeFile(USERS_FILE, JSON.stringify([defaultUser], null, 2));
+      return [defaultUser];
+    }
+    const data = await fs.readFile(USERS_FILE, "utf8");
+    return JSON.parse(data);
+  } catch (error) {
+    console.error("Ошибка при чтении пользователей:", error);
+    return [];
+  }
+}
+
+async function writeUsers(users) {
+  try {
+    await fs.writeFile(USERS_FILE, JSON.stringify(users, null, 2));
+    return true;
+  } catch (error) {
+    console.error("Ошибка при записи пользователей:", error);
+    return false;
+  }
+}
+
+// Функции для blacklist токенов
+async function readBlacklist() {
+  try {
+    if (!existsSync(BLACKLIST_FILE)) {
+      await fs.writeFile(BLACKLIST_FILE, JSON.stringify([], null, 2));
+      return [];
+    }
+    const data = await fs.readFile(BLACKLIST_FILE, "utf8");
+    return JSON.parse(data);
+  } catch (error) {
+    return [];
+  }
+}
+
+async function addToBlacklist(token, expiresAt) {
+  const blacklist = await readBlacklist();
+  blacklist.push({ token, expiresAt, addedAt: new Date().toISOString() });
+  await fs.writeFile(BLACKLIST_FILE, JSON.stringify(blacklist, null, 2));
+}
+
+async function isTokenBlacklisted(token) {
+  const blacklist = await readBlacklist();
+  return blacklist.some((item) => item.token === token);
+}
+
+// Middleware для проверки авторизации
+async function authenticateToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      errorMessage: "Требуется авторизация",
+    });
+  }
+
+  // Проверяем не в blacklist ли токен
+  if (await isTokenBlacklisted(token)) {
+    return res.status(401).json({
+      success: false,
+      errorMessage: "Токен отозван",
+    });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({
+        success: false,
+        errorMessage: "Недействительный или просроченный токен",
+      });
+    }
+    req.user = user;
+    next();
+  });
+}
+
+// Middleware для проверки роли администратора
+function requireAdmin(req, res, next) {
+  if (req.user.role !== "admin") {
+    return res.status(403).json({
+      success: false,
+      errorMessage: "Доступ запрещен. Требуются права администратора",
+    });
+  }
+  next();
+}
+
+// Middleware для проверки владельца ресурса или админа
+function requireOwnerOrAdmin(req, res, next) {
+  const resourceUserId = parseInt(req.params.userId);
+  if (req.user.role !== "admin" && req.user.id !== resourceUserId) {
+    return res.status(403).json({
+      success: false,
+      errorMessage: "Доступ запрещен",
+    });
+  }
+  next();
+}
+
+// Функция для генерации токенов
+function generateTokens(user) {
+  const accessToken = jwt.sign(
+    { id: user.id, username: user.username, role: user.role },
+    JWT_SECRET,
+    { expiresIn: ACCESS_TOKEN_EXPIRY }
+  );
+
+  const refreshToken = jwt.sign(
+    { id: user.id, type: "refresh" },
+    REFRESH_TOKEN_SECRET,
+    { expiresIn: REFRESH_TOKEN_EXPIRY }
+  );
+
+  return { accessToken, refreshToken };
+}
 
 // Функция для чтения фильмов из файла
 async function readFilms() {
@@ -314,6 +489,13 @@ const swaggerOptions = {
             errorMessage: { type: "string", example: "Описание ошибки" },
           },
         },
+        securitySchemes: {
+          bearerAuth: {
+            type: "http",
+            scheme: "bearer",
+            bearerFormat: "JWT",
+          },
+        },
       },
     },
   },
@@ -357,7 +539,7 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
  *       500:
  *         description: Внутренняя ошибка сервера
  */
-app.post("/getFilms", async (req, res) => {
+app.post("/getFilms", authenticateToken, async (req, res) => {
   try {
     const films = await readFilms();
     const {
@@ -515,7 +697,7 @@ app.post("/getFilms", async (req, res) => {
  *       500:
  *         description: Внутренняя ошибка сервера
  */
-app.post("/createFilm", async (req, res) => {
+app.post("/createFilm", authenticateToken, async (req, res) => {
   try {
     const {
       title,
@@ -720,7 +902,7 @@ app.post("/createFilm", async (req, res) => {
  *       500:
  *         description: Внутренняя ошибка сервера
  */
-app.put("/updateFilm/:id", async (req, res) => {
+app.put("/updateFilm/:id", authenticateToken, async (req, res) => {
   try {
     const filmId = parseInt(req.params.id);
     if (isNaN(filmId)) {
@@ -947,7 +1129,7 @@ app.put("/updateFilm/:id", async (req, res) => {
  *       500:
  *         description: Внутренняя ошибка сервера
  */
-app.delete("/deleteFilm/:id", async (req, res) => {
+app.delete("/deleteFilm/:id", authenticateToken, async (req, res) => {
   try {
     const filmId = parseInt(req.params.id);
 
@@ -1036,7 +1218,7 @@ app.delete("/deleteFilm/:id", async (req, res) => {
  *       500:
  *         description: Внутренняя ошибка сервера
  */
-app.patch("/changeFilmStatus/:id", async (req, res) => {
+app.patch("/changeFilmStatus/:id", authenticateToken, async (req, res) => {
   try {
     const filmId = parseInt(req.params.id);
     if (isNaN(filmId)) {
@@ -1087,6 +1269,420 @@ app.patch("/changeFilmStatus/:id", async (req, res) => {
     });
   }
 });
+
+/**
+ * @swagger
+ * /api/auth/register:
+ *   post:
+ *     summary: Регистрация нового пользователя
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - username
+ *               - email
+ *               - password
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 minLength: 3
+ *                 maxLength: 30
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *               confirmPassword:
+ *                 type: string
+ *                 minLength: 6
+ *     responses:
+ *       201:
+ *         description: Пользователь успешно зарегистрирован
+ *       400:
+ *         description: Ошибка валидации
+ */
+app.post(
+  "/api/auth/register",
+  [
+    body("username")
+      .isLength({ min: 3, max: 30 })
+      .withMessage("Имя пользователя должно быть от 3 до 30 символов"),
+    body("email").isEmail().withMessage("Неверный формат email"),
+    body("password")
+      .isLength({ min: 6 })
+      .withMessage("Пароль должен быть минимум 6 символов"),
+    body("confirmPassword").custom((value, { req }) => {
+      if (value !== req.body.password) {
+        throw new Error("Пароли не совпадают");
+      }
+      return true;
+    }),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          errorMessage: errors.array()[0].msg,
+        });
+      }
+
+      const { username, email, password } = req.body;
+      const users = await readUsers();
+
+      // Проверка существующего пользователя
+      if (users.find((u) => u.username === username)) {
+        return res.status(400).json({
+          success: false,
+          errorMessage: "Пользователь с таким именем уже существует",
+        });
+      }
+
+      if (users.find((u) => u.email === email)) {
+        return res.status(400).json({
+          success: false,
+          errorMessage: "Пользователь с таким email уже существует",
+        });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const newUser = {
+        id: users.length + 1,
+        username,
+        email,
+        password: hashedPassword,
+        role: "user",
+        createdAt: new Date().toISOString(),
+        isActive: true,
+        loginAttempts: 0,
+        lockUntil: null,
+      };
+
+      users.push(newUser);
+      await writeUsers(users);
+
+      // Не возвращаем пароль
+      const { password: _, ...userWithoutPassword } = newUser;
+
+      res.status(201).json({
+        success: true,
+        message: "Регистрация успешна",
+        data: userWithoutPassword,
+      });
+    } catch (error) {
+      console.error("Ошибка регистрации:", error);
+      res
+        .status(500)
+        .json({ success: false, errorMessage: "Внутренняя ошибка сервера" });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: Вход в систему
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - username
+ *               - password
+ *             properties:
+ *               username:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Успешный вход
+ *       401:
+ *         description: Неверные учетные данные
+ */
+app.post("/api/auth/login", authLimiter, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Имя пользователя и пароль обязательны",
+      });
+    }
+
+    const users = await readUsers();
+    const user = users.find((u) => u.username === username);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        errorMessage: "Неверное имя пользователя или пароль",
+      });
+    }
+
+    // Проверка блокировки
+    if (user.lockUntil && new Date(user.lockUntil) > new Date()) {
+      const minutesLeft = Math.ceil(
+        (new Date(user.lockUntil) - new Date()) / 60000
+      );
+      return res.status(401).json({
+        success: false,
+        errorMessage: `Аккаунт заблокирован на ${minutesLeft} минут`,
+      });
+    }
+
+    const isValid = await bcrypt.compare(password, user.password);
+
+    if (!isValid) {
+      // Увеличиваем счетчик попыток
+      user.loginAttempts = (user.loginAttempts || 0) + 1;
+      if (user.loginAttempts >= 5) {
+        user.lockUntil = new Date(Date.now() + 15 * 60000).toISOString();
+      }
+      await writeUsers(users);
+
+      return res.status(401).json({
+        success: false,
+        errorMessage: "Неверное имя пользователя или пароль",
+      });
+    }
+
+    // Сброс счетчика попыток
+    user.loginAttempts = 0;
+    user.lockUntil = null;
+    await writeUsers(users);
+
+    const { accessToken, refreshToken } = generateTokens(user);
+
+    // Устанавливаем refresh token в httpOnly cookie
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 дней
+    });
+
+    res.json({
+      success: true,
+      accessToken,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error("Ошибка входа:", error);
+    res
+      .status(500)
+      .json({ success: false, errorMessage: "Внутренняя ошибка сервера" });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/refresh:
+ *   post:
+ *     summary: Обновление access токена
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Новый access токен
+ *       401:
+ *         description: Недействительный refresh токен
+ */
+app.post("/api/auth/refresh", async (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+
+  if (!refreshToken) {
+    return res.status(401).json({
+      success: false,
+      errorMessage: "Refresh токен не найден",
+    });
+  }
+
+  try {
+    const decoded = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET);
+    const users = await readUsers();
+    const user = users.find((u) => u.id === decoded.id);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        errorMessage: "Пользователь не найден",
+      });
+    }
+
+    const newAccessToken = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      JWT_SECRET,
+      { expiresIn: ACCESS_TOKEN_EXPIRY }
+    );
+
+    res.json({ success: true, accessToken: newAccessToken });
+  } catch (error) {
+    res.status(401).json({
+      success: false,
+      errorMessage: "Недействительный refresh токен",
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: Выход из системы
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Успешный выход
+ */
+app.post("/api/auth/logout", authenticateToken, async (req, res) => {
+  const token = req.headers["authorization"].split(" ")[1];
+  const decoded = jwt.decode(token);
+
+  if (decoded && decoded.exp) {
+    await addToBlacklist(token, new Date(decoded.exp * 1000).toISOString());
+  }
+
+  res.clearCookie("refreshToken");
+  res.json({ success: true, message: "Выход выполнен успешно" });
+});
+
+/**
+ * @swagger
+ * /api/auth/me:
+ *   get:
+ *     summary: Получение информации о текущем пользователе
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Информация о пользователе
+ */
+app.get("/api/auth/me", authenticateToken, async (req, res) => {
+  const users = await readUsers();
+  const user = users.find((u) => u.id === req.user.id);
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      errorMessage: "Пользователь не найден",
+    });
+  }
+
+  const { password, ...userWithoutPassword } = user;
+  res.json({ success: true, data: userWithoutPassword });
+});
+
+/**
+ * @swagger
+ * /api/auth/change-password:
+ *   post:
+ *     summary: Смена пароля
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - oldPassword
+ *               - newPassword
+ *             properties:
+ *               oldPassword:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *                 minLength: 6
+ *               confirmNewPassword:
+ *                 type: string
+ */
+app.post(
+  "/api/auth/change-password",
+  authenticateToken,
+  [
+    body("newPassword")
+      .isLength({ min: 6 })
+      .withMessage("Новый пароль должен быть минимум 6 символов"),
+    body("confirmNewPassword").custom((value, { req }) => {
+      if (value !== req.body.newPassword) {
+        throw new Error("Пароли не совпадают");
+      }
+      return true;
+    }),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          errorMessage: errors.array()[0].msg,
+        });
+      }
+
+      const { oldPassword, newPassword } = req.body;
+      const users = await readUsers();
+      const userIndex = users.findIndex((u) => u.id === req.user.id);
+
+      if (userIndex === -1) {
+        return res.status(404).json({
+          success: false,
+          errorMessage: "Пользователь не найден",
+        });
+      }
+
+      const isValid = await bcrypt.compare(
+        oldPassword,
+        users[userIndex].password
+      );
+      if (!isValid) {
+        return res.status(401).json({
+          success: false,
+          errorMessage: "Неверный текущий пароль",
+        });
+      }
+
+      users[userIndex].password = await bcrypt.hash(newPassword, 10);
+      await writeUsers(users);
+
+      res.json({ success: true, message: "Пароль успешно изменен" });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ success: false, errorMessage: "Внутренняя ошибка сервера" });
+    }
+  }
+);
+
+setInterval(async () => {
+  const blacklist = await readBlacklist();
+  const now = new Date();
+  const validTokens = blacklist.filter(
+    (item) => new Date(item.expiresAt) > now
+  );
+  if (validTokens.length !== blacklist.length) {
+    await fs.writeFile(BLACKLIST_FILE, JSON.stringify(validTokens, null, 2));
+  }
+}, 60 * 60 * 1000);
 
 app.listen(port, () => {
   console.log(`Сервер запущен на порту ${port}`);
